@@ -156,18 +156,20 @@ export default function SettingsPage() {
         {/* 미리보기 */}
         <div className="border-t pt-6">
           <h3 className="text-sm font-medium text-gray-700 mb-2">미리보기 (실제 이메일 화면)</h3>
-          <div className="bg-white border border-gray-300 rounded-lg p-4 min-h-[200px]">
-            <div className="text-sm font-semibold text-gray-900 mb-3 pb-2 border-b border-gray-200">
+          <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
+            <div className="text-sm font-semibold text-gray-900 mb-3 pb-2 bg-white px-3 py-2 rounded border-b border-gray-200">
               📧 제목: {config.email_subject || '(제목 없음)'}
             </div>
-            <div 
-              className="text-sm text-black leading-relaxed"
-              dangerouslySetInnerHTML={{
-                __html: (config.email_template
+            <iframe
+              srcDoc={
+                config.email_template
                   .replace(/{{company_name}}/g, '<strong>홍길동컴퍼니</strong>')
-                  .replace(/{{ceo_name}}/g, '<strong>홍길동</strong>')
-                  .replace(/\n/g, '<br>') || '<em style="color: #999;">(내용 없음)</em>')
-              }}
+                  .replace(/{{ceo_name}}/g, '<strong>홍길동</strong>') || 
+                '<div style="padding: 20px; color: #999; text-align: center;">(내용 없음)</div>'
+              }
+              className="w-full border-0 bg-white rounded"
+              style={{ minHeight: '600px', height: 'auto' }}
+              title="이메일 미리보기"
             />
           </div>
         </div>

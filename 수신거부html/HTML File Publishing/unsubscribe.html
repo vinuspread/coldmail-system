@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>수신거부 처리 완료</title>
+    
+    <style>
+        /* Pretendard Font */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            background-color: #ffffff;
+            width: 100%; height: 100vh;
+        }
+        .container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            width: 100%; height: 100%;
+        }
+        .content-wrapper {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 32px; width: 100%; height: 100%;
+        }
+        .cont {
+            display: flex; flex-direction: column; gap: 10px; align-items: flex-start; flex-shrink: 0;
+        }
+        .logo { position: relative; flex-shrink: 0; width: 70px; height: 70px; }
+        .logo img { display: block; width: 100%; height: 100%; }
+        
+        .bye-img { position: relative; flex-shrink: 0; width: 160px; height: 160px; }
+        .bye-img img {
+            position: absolute; inset: 0; max-width: none;
+            object-fit: cover; object-position: 50% 50%;
+            pointer-events: none; width: 100%; height: 100%;
+        }
+        
+        .txt-01 {
+            display: flex; flex-direction: column; gap: 12px; align-items: flex-start;
+            line-height: normal; font-style: normal; flex-shrink: 0;
+            white-space: nowrap; width: 100%;
+        }
+        .email {
+            font-family: 'Pretendard', sans-serif; font-weight: 600; flex-shrink: 0;
+            color: #222; font-size: 20px; letter-spacing: -0.5px;
+        }
+        .title {
+            font-family: 'Pretendard', sans-serif; font-weight: 800; flex-shrink: 0;
+            color: #222; font-size: 24px; letter-spacing: -0.5px;
+        }
+        .description {
+            font-family: 'Pretendard', sans-serif; font-weight: 400; flex-shrink: 0;
+            color: #a8adb4; font-size: 12px; line-height: 1.5;
+        }
+        .description p { margin: 0; }
+        .thank-you {
+            font-family: 'Pretendard', sans-serif; font-weight: 400; flex-shrink: 0;
+            color: #222; font-size: 12px;
+        }
+        
+        @media (max-width: 768px) {
+            .content-wrapper { padding: 16px; }
+            .txt-01 { white-space: normal; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="content-wrapper">
+            <div class="cont">
+                <div class="logo">
+                    <img alt="VINUS" src="https://www.vinus.co.kr/coldmail/images/logo_black.png" onerror="this.style.display='none'"/>
+                </div>
+
+                <div class="bye-img">
+                    <img alt="Goodbye" src="https://www.vinus.co.kr/coldmail/images/bye.png" />
+                </div>
+
+                <div class="txt-01">
+                    <p class="email" id="user-email">처리 중...</p>
+                    <p class="title" id="status-title">잠시만 기다려주세요.</p>
+                    <div class="description">
+                        <p>원하지 않는 메일로 불편을 드렸다면 죄송합니다.</p>
+                        <p>귀사의 무한한 발전을 기원하겠습니다.</p>
+                    </div>
+                    <p class="thank-you">감사합니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ▼▼▼ Admin Web API URL 설정 ▼▼▼
+        const API_BASE_URL = 'http://localhost:3000'; // 개발: localhost:3000, 실서버: https://yourdomain.com
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+        async function handleUnsubscribe() {
+            const emailEl = document.getElementById('user-email');
+            const titleEl = document.getElementById('status-title');
+            
+            // URL에서 이메일 가져오기
+            const urlParams = new URLSearchParams(window.location.search);
+            const email = urlParams.get('email');
+
+            if (!email) {
+                emailEl.innerText = "-";
+                titleEl.innerText = "잘못된 접근입니다.";
+                titleEl.style.color = "red";
+                return;
+            }
+
+            // 화면에 이메일 표시
+            emailEl.innerText = email;
+
+            // Admin Web API로 수신거부 요청
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/unsubscribe`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email: email })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || '처리 실패');
+                }
+
+                // 성공 시
+                titleEl.innerText = "수신거부 처리가 완료되었습니다.";
+                
+            } catch (error) {
+                console.error('수신거부 처리 에러:', error);
+                titleEl.innerText = "처리 중 오류가 발생했습니다.";
+                titleEl.style.color = "red";
+            }
+        }
+
+        // 페이지 로드 시 실행
+        handleUnsubscribe();
+    </script>
+</body>
+</html>

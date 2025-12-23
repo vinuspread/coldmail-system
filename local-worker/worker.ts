@@ -14,6 +14,7 @@ const smtpPort = parseInt(process.env.SMTP_PORT || '465');
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 const smtpFrom = process.env.SMTP_FROM || smtpUser;
+const adminBaseUrl = process.env.ADMIN_BASE_URL || 'http://localhost:3000'; // 수신거부 링크용
 
 // 3. 필수값 체크 (없으면 바로 에러 뿜고 종료)
 if (!supabaseUrl || !supabaseKey) {
@@ -60,21 +61,35 @@ async function startWorker() {
         continue;
       }
 
-      // 2. 꺼져있으면 대기
-      if (!config || config.is_running === false) {
+      // 2. 즉시발송(dispatch) 우선 확인 (시스템 OFF 상태에서도 발송)
+      // 단, unsubscribed 상태는 제외
+      let { data: customers, error: customerError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('status', 'dispatch')
+        .limit(1);
+
+      // dispatch가 없고, 시스템이 꺼져있으면 대기
+      if ((!customers || customers.length === 0) && (!config || config.is_running === false)) {
         process.stdout.write('.'); // 화면 도배 방지용 점 찍기
         await sleep(10000); // 10초 대기
         continue;
       }
 
-      console.log('\n🟢 발송 신호 감지! 대상 조회 중...');
-
-      // 3. 보낼 사람 1명 조회 (Limit 1)
-      const { data: customers, error: customerError } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('status', 'ready')
-        .limit(1);
+      // dispatch가 없고, 시스템이 켜져있으면 ready 조회
+      if ((!customers || customers.length === 0) && config.is_running) {
+        console.log('\n🟢 발송 신호 감지! 대상 조회 중...');
+        const readyResult = await supabase
+          .from('customers')
+          .select('*')
+          .eq('status', 'ready')
+          .limit(1);
+        
+        customers = readyResult.data;
+        customerError = readyResult.error;
+      } else if (customers && customers.length > 0) {
+        console.log('\n🚀 즉시발송 감지! 대상 조회 중...');
+      }
 
       if (customerError) {
         console.error('⚠️ 고객 조회 실패:', customerError.message);
@@ -90,7 +105,21 @@ async function startWorker() {
       }
 
       const customer = customers[0];
-      console.log(`📧 발송 시도: ${customer.company_name} (${customer.email})`);
+      
+      // 즉시 상태 변경하여 중복 발송 방지 (락 걸기)
+      const { error: lockError } = await supabase
+        .from('customers')
+        .update({ status: 'sending' })
+        .eq('id', customer.id)
+        .eq('status', customer.status); // 현재 상태일 때만 변경 (동시성 제어)
+
+      if (lockError) {
+        console.error('⚠️ 상태 변경 실패:', lockError.message);
+        await sleep(2000);
+        continue;
+      }
+
+      console.log(`📧 발송 시도: ${customer.company_name} (${customer.email}) [${customer.status}]`);
 
       // 4. 템플릿 치환
       let mailSubject = config.email_subject || '제안서입니다.';
@@ -99,6 +128,13 @@ async function startWorker() {
       // {{company_name}} 등을 실제 데이터로 바꾸기
       mailBody = mailBody.replace(/{{company_name}}/g, customer.company_name || '');
       mailBody = mailBody.replace(/{{ceo_name}}/g, customer.ceo_name || '대표님');
+
+      // 수신거부 링크에 이메일 주소 포함
+      const unsubscribeUrl = `http://www.vinus.co.kr/coldmail/unsubscribe.html?email=${encodeURIComponent(customer.email)}`;
+      mailBody = mailBody.replace(
+        /http:\/\/www\.vinus\.co\.kr\/coldmail\/unsubscribe\.html/g,
+        unsubscribeUrl
+      );
 
       // 5. 메일 발송
       try {
