@@ -24,6 +24,7 @@ export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [editingMemo, setEditingMemo] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   // 신규 고객 폼
   const [newCustomer, setNewCustomer] = useState({
@@ -90,7 +91,6 @@ export default function CustomersPage() {
 
       if (error) throw error;
 
-      alert('✅ 저장되었습니다');
       setNewCustomer({ company_name: '', ceo_name: '', email: '', memo: '', biz_type: '', phone: '', address: '' });
       fetchCustomers();
     } catch (error: any) {
@@ -106,7 +106,6 @@ export default function CustomersPage() {
 
       if (error) throw error;
 
-      alert('✅ 삭제되었습니다.');
       fetchCustomers();
     } catch (error: any) {
       alert('❌ 삭제 실패: ' + error.message);
@@ -126,6 +125,45 @@ export default function CustomersPage() {
       fetchCustomers();
     } catch (error: any) {
       alert('❌ 메모 수정 실패: ' + error.message);
+    }
+  };
+
+  const toggleSelection = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredCustomers.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredCustomers.map((c) => c.id));
+    }
+  };
+
+  const deleteBulk = async () => {
+    if (selectedIds.length === 0) {
+      alert('삭제할 고객을 선택해주세요.');
+      return;
+    }
+
+    if (!confirm(`선택한 ${selectedIds.length}명의 고객을 삭제하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .in('id', selectedIds);
+
+      if (error) throw error;
+
+      setSelectedIds([]);
+      fetchCustomers();
+    } catch (error: any) {
+      alert('❌ 일괄 삭제 실패: ' + error.message);
     }
   };
 
@@ -249,16 +287,27 @@ export default function CustomersPage() {
       <div>
         <h2 className="text-xl font-semibold text-gray-900 mb-4">고객 목록</h2>
         
-        {/* 검색창 */}
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="회사명, 이메일, 업종으로 검색..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+        {/* 검색창 및 일괄 삭제 버튼 */}
+        <div className="flex gap-4 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="회사명, 이메일, 업종으로 검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          {selectedIds.length > 0 && (
+            <button
+              onClick={deleteBulk}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              선택 삭제 ({selectedIds.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -267,6 +316,14 @@ export default function CustomersPage() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th className="px-4 py-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={filteredCustomers.length > 0 && selectedIds.length === filteredCustomers.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300 cursor-pointer"
+                />
+              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 회사명
               </th>
@@ -296,6 +353,14 @@ export default function CustomersPage() {
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredCustomers.map((customer) => (
               <tr key={customer.id} className="hover:bg-gray-50">
+                <td className="px-4 py-4 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(customer.id)}
+                    onChange={() => toggleSelection(customer.id)}
+                    className="rounded border-gray-300 cursor-pointer"
+                  />
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {customer.company_name}
                 </td>
