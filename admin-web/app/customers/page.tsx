@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { Trash2, Edit, Plus, Search } from 'lucide-react';
+import { Trash2, Edit, Plus, Search, Upload, FileText } from 'lucide-react';
 
 interface Customer {
   id: number;
@@ -25,6 +25,11 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [editingMemo, setEditingMemo] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [uploadResult, setUploadResult] = useState<{
+    success: number;
+    skipped: number;
+    errors: string[];
+  } | null>(null);
 
   // 신규 고객 폼
   const [newCustomer, setNewCustomer] = useState({
@@ -167,6 +172,116 @@ export default function CustomersPage() {
     }
   };
 
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // 초기화
+    setUploadResult(null);
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+
+      if (lines.length === 0) {
+        alert('CSV 파일이 비어있습니다.');
+        return;
+      }
+
+      // 헤더 확인 (첫 번째 줄)
+      const hasHeader = lines[0].includes('회사명') || lines[0].includes('이메일');
+      const dataLines = hasHeader ? lines.slice(1) : lines;
+
+      let successCount = 0;
+      let skippedCount = 0;
+      const errors: string[] = [];
+
+      // 기존 이메일 목록 가져오기
+      const { data: existingCustomers } = await supabase
+        .from('customers')
+        .select('email');
+      
+      const existingEmails = new Set(
+        existingCustomers?.map(c => c.email.toLowerCase()) || []
+      );
+
+      const processedEmails = new Set<string>();
+
+      for (let i = 0; i < dataLines.length; i++) {
+        const line = dataLines[i];
+        const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''));
+
+        if (parts.length < 2) {
+          errors.push(`${i + 1}번째 줄: 데이터 형식 오류 (회사명, 이메일 필요)`);
+          skippedCount++;
+          continue;
+        }
+
+        const [companyName, email] = parts;
+
+        // 빈 값 체크
+        if (!companyName || !email) {
+          errors.push(`${i + 1}번째 줄: 회사명 또는 이메일 누락`);
+          skippedCount++;
+          continue;
+        }
+
+        // 이메일 형식 검증
+        if (!isValidEmail(email)) {
+          errors.push(`${i + 1}번째 줄: 잘못된 이메일 형식 (${email})`);
+          skippedCount++;
+          continue;
+        }
+
+        const emailLower = email.toLowerCase();
+
+        // 중복 체크 (기존 DB + 현재 처리 중인 데이터)
+        if (existingEmails.has(emailLower) || processedEmails.has(emailLower)) {
+          errors.push(`${i + 1}번째 줄: 중복된 이메일 (${email})`);
+          skippedCount++;
+          continue;
+        }
+
+        // 고객 등록
+        const { error } = await supabase.from('customers').insert([
+          {
+            company_name: companyName,
+            email: email,
+            status: 'ready',
+            ceo_name: '',
+          },
+        ]);
+
+        if (error) {
+          errors.push(`${i + 1}번째 줄: DB 오류 - ${error.message}`);
+          skippedCount++;
+        } else {
+          successCount++;
+          processedEmails.add(emailLower);
+        }
+      }
+
+      setUploadResult({
+        success: successCount,
+        skipped: skippedCount,
+        errors: errors,
+      });
+
+      // 고객 목록 새로고침
+      await fetchCustomers();
+
+      // 파일 입력 초기화
+      event.target.value = '';
+    } catch (error: any) {
+      alert('❌ CSV 업로드 실패: ' + error.message);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const styles = {
       ready: 'bg-yellow-100 text-yellow-800',
@@ -277,6 +392,66 @@ export default function CustomersPage() {
           >
             저장
           </button>
+        </div>
+      </div>
+
+      {/* CSV 일괄 업로드 섹션 */}
+      <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg shadow-md p-6 border border-green-100">
+        <div className="flex items-center gap-2 mb-4">
+          <Upload className="w-5 h-5 text-green-600" />
+          <h3 className="text-lg font-semibold text-gray-900">CSV 일괄 업로드</h3>
+        </div>
+        
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm cursor-pointer">
+              <FileText className="w-4 h-4" />
+              CSV 파일 선택
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleCSVUpload}
+                className="hidden"
+              />
+            </label>
+            <span className="text-sm text-gray-600">
+              형식: 회사명, 이메일 (헤더 있어도 됨)
+            </span>
+          </div>
+
+          {uploadResult && (
+            <div className={`p-4 rounded-lg border ${
+              uploadResult.success > 0 
+                ? 'bg-green-50 border-green-200' 
+                : 'bg-yellow-50 border-yellow-200'
+            }`}>
+              <div className="font-semibold text-gray-900 mb-2">
+                ✅ 업로드 완료: {uploadResult.success}개 등록됨 
+                {uploadResult.skipped > 0 && ` | ⚠️ ${uploadResult.skipped}개 건너뜀`}
+              </div>
+              
+              {uploadResult.errors.length > 0 && (
+                <div className="mt-3">
+                  <details className="cursor-pointer">
+                    <summary className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                      건너뛴 항목 상세 보기 ({uploadResult.errors.length}개)
+                    </summary>
+                    <ul className="mt-2 space-y-1 text-xs text-gray-600 max-h-40 overflow-y-auto">
+                      {uploadResult.errors.map((error, idx) => (
+                        <li key={idx} className="pl-4">• {error}</li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>• 중복된 이메일은 자동으로 건너뜁니다</p>
+            <p>• 잘못된 이메일 형식은 등록되지 않습니다</p>
+            <p>• 회사명과 이메일이 모두 있어야 합니다</p>
+          </div>
         </div>
       </div>
 
